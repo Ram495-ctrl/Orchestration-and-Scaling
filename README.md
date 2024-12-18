@@ -89,6 +89,76 @@ done
 echo "All images have been pushed to the ECR repository $REPO_NAME."
 ```
 
+Step 3: Version Control
+1. Use AWS CodeCommit:
+   - Create a CodeCommit repository.
+   - Push the MERN application source code to the CodeCommit repository.
+It has been agreed that there is no necessity to use Code Commit as it has been deprecated.
+Step 4: Continuous Integration with Jenkins
+1. Set Up Jenkins:
+   - Install Jenkins on an EC2 instance.
+   - Configure Jenkins with necessary plugins.
+2. Create Jenkins Jobs:
+   - Create Jenkins jobs for building and pushing Docker images to ECR.
+   - Trigger the Jenkins jobs whenever there's a new commit in the CodeCommit repository.
+It has been agreed that there is no necessity to use Code Commit as it has been deprecated.
+I have created a Jenkins job which will be executed manually for now for moving the containers to ECR. The manual trigger of the Jenkins job will ensure that the shell script will be executed which will trigger the pushing of the container images to the AWS ECR.
+
+Getting started in Jenkins within the Amazon EC2 Instance 
+
+![image](https://github.com/user-attachments/assets/d18c243e-4708-4a63-9c35-0e8700b3fe85)
+
+Creating a Jenkins Job 
+
+<img width="1181" alt="image" src="https://github.com/user-attachments/assets/64a3983a-0373-4237-ae81-2efd523a13af" />
+
+The pipeline had run fine after sorting the permission issues 
+
+![image](https://github.com/user-attachments/assets/7aa95a72-b4ae-4bce-8f72-eeb68a109626)
+
+Jenkins pipeline configuration code:
+
+```
+pipeline {
+    agent any
+    environment {
+        AWS_REGION = 'us-west-2'
+        AWS_ACCOUNT_ID = '975050024946'
+        SCRIPT_PATH = '/home/ubuntu/SampleMERNwithMicroservices/push_all_to_ecr.sh'
+    }
+    stages {
+        stage('Prepare') {
+            steps {
+                script {
+                    echo 'Ensuring AWS CLI and Docker are accessible...'
+                    sh 'aws --version'
+                    sh 'docker --version'
+                }
+            }
+        }
+        stage('Push to ECR') {
+            steps {
+                script {
+                    echo 'Running the ECR push script...'
+                    sh """
+                    sudo chmod +x ${SCRIPT_PATH}
+                    sudo ${SCRIPT_PATH}
+                    """
+                }
+            }
+        }
+    }
+    post {
+        always {
+            echo 'Job completed!'
+        }
+    }
+}
+```
+
+Jenkins jobs have updated the ECR Elastic container registry as expected by running the shell script 
+
+<img width="445" alt="image" src="https://github.com/user-attachments/assets/e120db30-0f3f-4489-a87b-62905d33ca0d" />
 
 
 
