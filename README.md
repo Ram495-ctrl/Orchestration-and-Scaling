@@ -160,6 +160,179 @@ Jenkins jobs have updated the ECR Elastic container registry as expected by runn
 
 <img width="445" alt="image" src="https://github.com/user-attachments/assets/e120db30-0f3f-4489-a87b-62905d33ca0d" />
 
+Step 5: Infrastructure as Code (IaC) with Boto3
+1. Define Infrastructure with Boto3 (Python Script):
+   - Use Boto3 to define the infrastructure (VPC, subnets, security groups).
+   - Define an Auto Scaling Group (ASG) for the backend.
+   - Create AWS Lambda functions if needed.
+Boto3 code is created for the same 
+```
+import boto3
+
+# Parameters
+VPC_ID = "vpc-0321f38a7b594180d"  # Replace with your VPC ID
+SUBNET_IDS = [
+    "subnet-06bd72b2e4cb41d10",
+    "subnet-09bd0e0acc92d4efa",
+]  # Replace with your subnet IDs
+SECURITY_GROUP_ID = "sg-091b3da4f3bdc9d5b"  # Replace with your security group ID
+AMI_ID = "ami-04dd23e62ed049936"  # Replace with the correct AMI ID for your backend instances
+INSTANCE_TYPE = "t3.medium"  # Choose an appropriate instance type
+USER_DATA = """#!/bin/bash
+sudo apt update
+sudo apt install -y docker
+sudo docker run -d -p 80:80 backend-image  # Replace with your backend Docker image
+"""
+TARGET_GROUP_NAME = "backend-target-group"
+LOAD_BALANCER_NAME = "my-alb"
+AUTO_SCALING_GROUP_NAME = "backend-asg"
+
+# Initialize Boto3 clients
+ec2 = boto3.client("ec2")
+elbv2 = boto3.client("elbv2")
+autoscaling = boto3.client("autoscaling")
+
+# 1. Create a Target Group for the Backend instances
+target_group_response = elbv2.create_target_group(
+    Name=TARGET_GROUP_NAME,
+    Protocol="HTTP",
+    Port=80,  # or whichever port your backend uses
+    VpcId=VPC_ID,
+    HealthCheckProtocol="HTTP",
+    HealthCheckPort="80",
+    HealthCheckPath="/health",  # Replace with your actual health check endpoint
+    Matcher={
+        "HttpCode": "200"  # Adjust this to match your backend health check response
+    },
+)
+
+target_group_arn = target_group_response["TargetGroups"][0]["TargetGroupArn"]
+
+# 2. Create an Application Load Balancer (ALB)
+load_balancer_response = elbv2.create_load_balancer(
+    Name=LOAD_BALANCER_NAME,
+    Subnets=SUBNET_IDS,
+    SecurityGroups=[SECURITY_GROUP_ID],
+    Scheme="internet-facing",
+    Type="application",
+    IpAddressType="ipv4",
+)
+
+alb_arn = load_balancer_response["LoadBalancers"][0]["LoadBalancerArn"]
+alb_dns_name = load_balancer_response["LoadBalancers"][0]["DNSName"]
+
+# Modify the Load Balancer Attributes
+elbv2.modify_load_balancer_attributes(
+    LoadBalancerArn=alb_arn,
+    Attributes=[{"Key": "idle_timeout.timeout_seconds", "Value": "60"}],
+)
+
+# 3. Create an Auto Scaling Group (ASG)
+launch_configuration_response = autoscaling.create_launch_configuration(
+    LaunchConfigurationName=f"{AUTO_SCALING_GROUP_NAME}-launch-config",
+    ImageId=AMI_ID,
+    InstanceType=INSTANCE_TYPE,
+    SecurityGroups=[SECURITY_GROUP_ID],
+    UserData=USER_DATA,
+    InstanceMonitoring={"Enabled": True},
+)
+
+asg_response = autoscaling.create_auto_scaling_group(
+    AutoScalingGroupName=AUTO_SCALING_GROUP_NAME,
+    LaunchConfigurationName=f"{AUTO_SCALING_GROUP_NAME}-launch-config",
+    MinSize=2,  # Minimum number of instances
+    MaxSize=5,  # Maximum number of instances
+    DesiredCapacity=2,  # Desired number of instances
+    VPCZoneIdentifier=",".join(SUBNET_IDS),  # Replace with your subnet IDs
+    TargetGroupARNs=[target_group_arn],  # Associate with the target group
+    HealthCheckType="EC2",
+    HealthCheckGracePeriod=300,  # Adjust this based on your health check needs
+    Tags=[{"Key": "Name", "Value": "backend-instance", "PropagateAtLaunch": True}],
+)
+
+# 4. Register the ALB with Auto Scaling Group
+# ALB Listener setup (HTTP Listener to forward traffic to the target group)
+# ALB Listener setup (HTTP Listener to forward traffic to the target group)
+listener_response = elbv2.create_listener(
+    LoadBalancerArn=alb_arn,
+    Protocol="HTTP",
+    Port=80,
+    DefaultActions=[{"Type": "forward", "TargetGroupArn": target_group_arn}],
+)
+
+# Print the ALB DNS Name and confirmation of Auto Scaling Group creation
+print(f"ALB DNS Name: {alb_dns_name}")
+print(f"Auto Scaling Group {AUTO_SCALING_GROUP_NAME} created successfully.")
+```
+
+When I run the Boto3 code I can see the Load Balancer, ASG, created 
+
+<img width="448" alt="image" src="https://github.com/user-attachments/assets/ddeef303-bde5-43ea-80f4-c0b60ac2741a" />
+
+Step 6: Deploying Backend Services
+1. Deploy Backend on EC2 with ASG:
+   - Use Boto3 to deploy EC2 instances with the Dockerized backend application in the ASG.
+Step 7: Set Up Networking
+1. Create Load Balancer:
+   - Set up an Elastic Load Balancer (ELB) for the backend ASG.
+2. Configure DNS:
+   - Set up DNS using Route 53 or any other DNS service.
+Step 8: Deploying Frontend Services
+1. Deploy Frontend on EC2:
+   - Use Boto3 to deploy EC2 instances with the Dockerized frontend application.
+     
+The load balancers were created and everything under the ASG the baclend containers were loaded.
+
+<img width="451" alt="image" src="https://github.com/user-attachments/assets/8411e02c-b320-45bb-aa2b-cea9e2de89b4" />
+
+The frontend was also was created with the docker container and I could see the website showing up like below when I give the ec2 module 
+
+![image](https://github.com/user-attachments/assets/1b06d668-058a-43f0-98b3-ef05d76270a3)
+
+Step 10: Kubernetes (EKS) Deployment
+
+
+1. Create EKS Cluster:
+   - Use eksctl or other tools to create an Amazon EKS cluster.
+2. Deploy Application with Helm:
+   - Use Helm to package and deploy the MERN application on EKS.
+Create the cluster using EKSCTL – 3 Nodes
+
+```
+eksctl create cluster \
+  --name pk1-eks-cluster \
+  --region us-west-2 \
+  --nodegroup-name standard-workers \
+  --node-type t3.medium \
+  --nodes 3 \
+  --nodes-min 3 \
+  --nodes-max 3 \
+  --managed
+```
+
+Cluster is created with 3 Nodes and in active ram-eks-cluster
+
+Step4:
+Installing the nodejs app into the cluster and trying to run it manually. After creating the deployment files.
+Frontend and the Backend YAML are deployed successfully 
+
+When I give the external IP of the load balancer front end service the application is displayed as expected 
+
+All the 6 Pods are running as expected 
+
+![image](https://github.com/user-attachments/assets/7f943e23-edc2-472f-ae89-b1c0d401a5d7)
+
+![image](https://github.com/user-attachments/assets/3fa5bfc4-7c13-42ff-937e-596fb574607e)
+
+Step5
+Using the HELM for the package deployment:
+mern-helm-chart/
+  ├── Chart.yaml
+  ├── values.yaml
+  ├── templates/
+      ├── frontend-deployment.yaml
+      ├── backend-deployment.yaml
+      ├── mongo-deployment.yaml
 
 
 
